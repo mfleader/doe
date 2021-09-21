@@ -11,8 +11,14 @@ import ryaml
 
 
 def unchanged_levels(factor_levels):
+    one_level = {}
+    for key,val in factor_levels.items():
+        if not isinstance(val, list):
+            one_level[key] = val
+        elif len(val) == 1:
+            one_level[key] = val[0]
     return (
-        dict(filter(lambda item: not isinstance(item[1], list) or len(item[1]) == 1, factor_levels.items())),
+        one_level,
         dict(filter(lambda item: isinstance(item[1], list) and len(item[1]) > 1, factor_levels.items()))
     )
 
@@ -73,20 +79,27 @@ def main():
             'args': None
         }
     }
-    base_arg = [
+    base_ = [
         './dnsdebug/snafu-dnsperf.sh',
     ]
 
-    print(unchanged_levels(factor_levels_dict))
+    base_args, factor_levels = unchanged_levels(factor_levels_dict)
+    base_args_levels = [
+        *base_,
+        *list(serialize_command_args(base_args))
+    ]
 
+    print(base_args_levels)
 
-    # for trial in randomize_powerset(factor_levels_dict):
-    #     args = [
-    #         *base_arg,
-    #         *list(serialize_command_args(trial))
-    #     ]
-        # mypod = create_pod(env)
-        # print(ryaml.dumps(client.ApiClient().sanitize_for_serialization(mypod)))
+    for trial in randomize_powerset(factor_levels):
+        env['container']['args'] = [
+            *base_args_levels,
+            *list(serialize_command_args(trial))
+        ]
+        # print(env['container']['args'])
+        mypod = create_pod(env)
+        with open(f"ocp_apps/{'-'.join(trial.values())}.yaml", 'w') as ocp_app:
+            ocp_app.write(ryaml.dumps(client.ApiClient().sanitize_for_serialization(mypod)))
 
 
 
