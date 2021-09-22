@@ -3,7 +3,7 @@ import sys
 import time
 import shutil
 from pathlib import Path
-
+import os
 import doe
 
 
@@ -46,6 +46,7 @@ def main():
         )
         time.sleep(sleep_t)
     shutil.rmtree('ocp_apps')
+    os.makedirs('ocp_apps')
 
 
 if __name__ == '__main__':
