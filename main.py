@@ -1,6 +1,7 @@
 import subprocess
 import sys
 import time
+import shutil
 from pathlib import Path
 
 import doe
@@ -36,14 +37,15 @@ def main():
         print(env['KUBECONFIG'])
 
         subprocess.run(
-            ['oc', 'apply', '-f', f"ocp_apps/{ocp_app_yaml}"],
+            ['oc', 'apply', '-f', str(ocp_app_yaml)],
             env=env
         )
         subprocess.run(
-            ['oc', 'delete', '-f', f"ocp_apps/{ocp_app_yaml}"],
+            ['oc', 'delete', '-f', str(ocp_app_yaml)],
             env=env
         )
         time.sleep(sleep_t)
+    shutil.rmtree('ocp_apps')
 
 
 if __name__ == '__main__':
