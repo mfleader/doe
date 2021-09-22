@@ -3,6 +3,8 @@ import json
 import sys
 from pathlib import Path
 import random
+import uuid
+import toml
 
 from kubernetes import client, config
 import pandas as pd
@@ -29,6 +31,7 @@ def randomize_powerset(factor_levels):
     # random.shuffle(power_set_levels)
     # print(power_set_levels)
     df0 = pd.DataFrame.from_records(power_set_levels, columns=factor_levels.keys())
+    df0['trial_id'] = df0.index + 1
     # print(df0.sample(frac=1,random_state=1))
     for exp_levels in df0.to_dict('records'):
         yield exp_levels
@@ -63,11 +66,16 @@ def serialize_command_args(cmd_args: dict):
         yield str(val)
 
 
-def main():
-
-    factor_levels_filepath = Path(sys.argv[1])
-    with open(factor_levels_filepath, 'r') as factor_levels_file:
-        factor_levels_dict = json.load(factor_levels_file)
+def main(
+    es_url, es_index,
+    factor_levels_filepath = 'ocp_apps',
+    block_id = 1,
+):
+    # elasticsearch_url = sys.argv[2]
+    # with open(factor_levels_filepath, 'r') as factor_levels_file:
+    factor_levels_dict = toml.load(factor_levels_filepath)
+    # print(factor_levels_dict)
+    #     factor_levels_dict = json.load(factor_levels_file)
 
     env = {
         'name': 'dnsperf-test-wrapper',
@@ -79,27 +87,28 @@ def main():
             'args': None
         }
     }
-    base_ = [
-        './dnsdebug/snafu-dnsperf.sh',
-    ]
 
     base_args, factor_levels = unchanged_levels(factor_levels_dict)
     base_args_levels = [
-        *base_,
+        './dnsdebug/snafu_dnsperf.py',
+        '--run-id',
+        str(uuid.uuid4()),
+        '--block-id',
+        block_id,
         *list(serialize_command_args(base_args))
     ]
 
-    print(base_args_levels)
+    # print(base_args_levels)
 
     for trial in randomize_powerset(factor_levels):
         env['container']['args'] = [
             *base_args_levels,
             *list(serialize_command_args(trial))
         ]
-        # print(env['container']['args'])
-        mypod = create_pod(env)
-        with open(f"ocp_apps/{'-'.join(trial.values())}.yaml", 'w') as ocp_app:
-            ocp_app.write(ryaml.dumps(client.ApiClient().sanitize_for_serialization(mypod)))
+        print(env['container']['args'])
+        # mypod = create_pod(env)
+        # with open(f"ocp_apps/{'-'.join(trial.values())}.yaml", 'w') as ocp_app:
+        #     ocp_app.write(ryaml.dumps(client.ApiClient().sanitize_for_serialization(mypod)))
 
 
 
