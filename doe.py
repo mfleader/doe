@@ -105,10 +105,11 @@ def main(
             *base_args_levels,
             *list(serialize_command_args(trial))
         ]
-        print(env['container']['args'])
-        # mypod = create_pod(env)
-        # with open(f"ocp_apps/{'-'.join(trial.values())}.yaml", 'w') as ocp_app:
-        #     ocp_app.write(ryaml.dumps(client.ApiClient().sanitize_for_serialization(mypod)))
+        # print(env['container']['args'])
+        print(trial)
+        mypod = create_pod(env)
+        with open(f"ocp_apps/{'-'.join((str(val) for val in trial.values()))}.yaml", 'w') as ocp_app:
+            ocp_app.write(ryaml.dumps(client.ApiClient().sanitize_for_serialization(mypod)))
 
 
 

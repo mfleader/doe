@@ -25,24 +25,25 @@ def main():
         'KUBECONFIG': sdn_kubeconfig_path
     }
 
-    # for ocp_app_yaml in Path('ocp_apps').iterdir():
-    #     print(f"{ocp_app_yaml}")
+    for ocp_app_yaml in Path('ocp_apps').iterdir():
+        print(f"{ocp_app_yaml}")
 
-    #     network_type = ocp_app_yaml.split('-')[0]
-    #     if network_type == 'OpenShiftSDN':
-    #         env['KUBECONFIG'] = sdn_kubeconfig_path
-    #     elif network_type == 'OVNKubernetes':
-    #         env['KUBECONFIG'] = ovn_kubeconfig_path
+        factor_levels = { item for item in ocp_app_yaml.stem.split('-')}
+        if 'OpenShiftSDN' in factor_levels:
+            env['KUBECONFIG'] = sdn_kubeconfig_path
+        elif 'OVNKubernetes' in factor_levels:
+            env['KUBECONFIG'] = ovn_kubeconfig_path
+        print(env['KUBECONFIG'])
 
-    #     subprocess.run(
-    #         ['oc', 'apply', '-f', f"ocp_apps/{ocp_app_yaml}"],
-    #         env=env
-    #     )
-    #     subprocess.run(
-    #         ['oc', 'delete', '-f', f"ocp_apps/{ocp_app_yaml}"],
-    #         env=env
-        # )
-        # time.sleep(sleep_t)
+        subprocess.run(
+            ['oc', 'apply', '-f', f"ocp_apps/{ocp_app_yaml}"],
+            env=env
+        )
+        subprocess.run(
+            ['oc', 'delete', '-f', f"ocp_apps/{ocp_app_yaml}"],
+            env=env
+        )
+        time.sleep(sleep_t)
 
 
 if __name__ == '__main__':

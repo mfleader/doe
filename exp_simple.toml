@@ -1,0 +1,7 @@
+load_limit = ["inf"]
+query_path = "./dnsdebug/noerror.txt"
+control_plane_nodes = 3
+network_type = ["OpenShiftSDN", "OVNKubernetes"]
+transport_mode = ["udp", "tcp"]
+client_threads = [1,2,3,4,5,6,7]
+
