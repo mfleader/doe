@@ -7,9 +7,10 @@ authors = ["mleader <mleader@redhat.com>"]
 [tool.poetry.dependencies]
 python = "^3.9"
 pandas = "^1.3.3"
-kubernetes = "^18.20.0"
 ryaml = "^0.2.0"
 toml = "^0.10.2"
+openshift = "^0.12.1"
+typer = "^0.4.0"
 
 [tool.poetry.dev-dependencies]
 
