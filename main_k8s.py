@@ -19,10 +19,9 @@ app = typer.Typer()
 JOB_NAME = "dnsperf-test-wrapper"
 
 from kubernetes.dynamic import DynamicClient
-from kubernetes.client.models.v1_job_condition import V1JobCondition
 from kubernetes.client.models.v1_job_status import V1JobStatus
 from kubernetes.client.api.batch_v1_api import BatchV1Api
-
+from kubernetes.client.api.logs_api import LogsApi
 
 k8s_job_attribute_map = {
     val: key for key, val in V1JobStatus.attribute_map.items()
@@ -31,10 +30,12 @@ k8s_job_attribute_map = {
 def create_job_object(job_args):
     # Configureate Pod template container
     container = client.V1Container(
-        name=JOB_NAME,
+        name='container',
         image='quay.io/mleader/dnsdebug:latest',
+        image_pull_policy = 'Always',
         command=["/bin/sh", "-c"],
-        args=job_args)
+        args=[' '.join(job_args)]
+        )
     # Create and configurate a spec section
     template = client.V1PodTemplateSpec(
         metadata=client.V1ObjectMeta(labels={"app": JOB_NAME}),
@@ -47,7 +48,7 @@ def create_job_object(job_args):
     job = client.V1Job(
         api_version="batch/v1",
         kind="Job",
-        metadata=client.V1ObjectMeta(name=JOB_NAME),
+        metadata=client.V1ObjectMeta(name=JOB_NAME, namespace='dnsperf-test'),
         spec=spec)
 
     return job
@@ -77,7 +78,7 @@ def delete_job(api_instance):
         body=client.V1DeleteOptions(
             propagation_policy='Foreground',
             grace_period_seconds=5))
-    print("Job deleted. status='%s'" % str(api_response.status))
+    # print("Job deleted. status='%s'" % str(api_response.status))
 
 
 def create_pod(env):
@@ -117,54 +118,50 @@ def main(
     # ovn_cluster = config.new_client_from_config(ovn_kubeconfig_path)
 
     myargs = [
-                            "python",
-                            "./dnsdebug/snafu_dnsperf.py"
-                            "--run-id",
-                            "88ff59df-117c-46ac-ae4b-ea5962869387",
-                            "--block-id",
-                            "1",
-                            "--load_limit",
-                            "inf",
-                            "--query_path",
-                            "./dnsdebug/noerror.txt",
-                            "--control_plane_nodes",
-                            "3",
-                            "--network_type",
-                            "OpenShiftSDN",
-                            "--transport_mode",
-                            "tcp",
-                            "--client_threads",
-                            "1",
-                            "--trial_id",
-                            "8",
-                            "--runtime-length",
-                            "2"
-                        ]
+        "python",
+        "snafu/run_snafu.py",
+        "--tool",
+        "dnsperf",
+        "-v",
+        "--run-id",
+        "88ff59df-117c-46ac-ae4b-ea5962869387",
+        "--block-id",
+        "1",
+        "--load_limit",
+        "inf",
+        "--query_path",
+        "./dnsdebug/noerror.txt",
+        "--control_plane_nodes",
+        "3",
+        "--network_type",
+        "OpenShiftSDN",
+        "--transport_mode",
+        "tcp",
+        "--client_threads",
+        "1",
+        "--trial_id",
+        "8",
+        "--runtime-length",
+        "2"
+    ]
 
-
-
-    # batch_v1 = sdn_cluster.BatchV1Api()
 
     batch_v1 = BatchV1Api(api_client=sdn_cluster)
     job = create_job_object(myargs)
     sdn_dynamic = DynamicClient(sdn_cluster)
     job_resources = sdn_dynamic.resources.get(api_version='v1', kind='Job')
-    create_job(batch_v1, job)
-    watcher = watch.Watch()
 
-    for event in sdn_dynamic.watch(job_resources, namespace='dnsperf-test', watcher=watcher):
-        # print(type(event))
-        # print('=====================================================')
-        # print(event.keys())
-        # pprint(event['raw_object']['status'])
-        # print('------------------------------------------------------')
-        # pprint('-- v1 job status class --')
-        j = V1JobStatus(**{k8s_job_attribute_map[key]: val for key,val in event['raw_object']['status'].items() })
-        pprint(j)
-        print('======================================================')
-        if j.succeeded:
-            print('SUCCESS!')
-            watcher.stop()
+    # pprint(job)
+    print(ryaml.dumps(sdn_cluster.sanitize_for_serialization(job)))
+    create_job(batch_v1, job)
+    # watcher = watch.Watch()
+
+    # for event in sdn_dynamic.watch(job_resources, namespace='dnsperf-test', watcher=watcher):
+    #     j = V1JobStatus(**{k8s_job_attribute_map[key]: val for key,val in event['raw_object']['status'].items() })
+    #     print('======================================================')
+    #     if j.succeeded:
+    #         print('SUCCESS!')
+    #         watcher.stop()
             # delete_job(batch_v1)
 
 
