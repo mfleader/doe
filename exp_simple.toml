@@ -1,8 +1,9 @@
 load_limit = ["inf"]
-query_path = "./dnsdebug/noerror.txt"
-control_plane_nodes = 3
+query_path = ["./dnsdebug/noerror.txt", "./dnsdebug/nxdomain.txt"]
+control_plane_node_quantity = 3
+data_plane_node_quantity = 3
 network_type = ["OpenShiftSDN", "OVNKubernetes"]
 transport_mode = ["udp", "tcp"]
-client_threads = [1]
+client_threads = [1,2,3,4,5,6,7,8]
 distributed_computing_platform = "aws"
-runtime_length = 2
+runtime_length = 120
