@@ -5,4 +5,4 @@ network_type = ["OpenShiftSDN", "OVNKubernetes"]
 transport_mode = ["udp", "tcp"]
 client_threads = [1]
 distributed_computing_platform = "aws"
-
+runtime_length = 2

@@ -11,6 +11,7 @@ typer = "*"
 ryaml = "*"
 pandas = "*"
 toml = "*"
+kubernetes-asyncio = "*"
 
 [requires]
 python_version = "3.8"

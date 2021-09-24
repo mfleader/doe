@@ -67,8 +67,8 @@ def serialize_command_args(cmd_args: dict):
 
 
 def main(
-    es_url, es_index,
-    factor_levels_filepath = 'ocp_apps',
+    # es_url, es_index,
+    factor_levels_filepath,
     block_id = 1,
 ):
     # elasticsearch_url = sys.argv[2]
@@ -89,27 +89,33 @@ def main(
     }
 
     base_args, factor_levels = unchanged_levels(factor_levels_dict)
-    base_args_levels = [
-        './dnsdebug/snafu_dnsperf.py',
-        '--run-id',
-        str(uuid.uuid4()),
-        '--block-id',
-        block_id,
-        *list(serialize_command_args(base_args))
+    base_cmd = [
+        'snafu/run_snafu.py',
+        '-v'
     ]
+
+    base_args = {
+        'run_id': str(uuid.uuid4()),
+        'block_id': block_id,
+        **base_args
+    }
+
 
     # print(base_args_levels)
 
     for trial in randomize_powerset(factor_levels):
-        env['container']['args'] = [
-            *base_args_levels,
-            *list(serialize_command_args(trial))
-        ]
+        # env['container']['args'] = [
+        #     *base_args_levels,
+        #     *list(serialize_command_args(trial))
+        # ]
         # print(env['container']['args'])
-        print(trial)
-        mypod = create_pod(env)
-        with open(f"ocp_apps/{'-'.join((str(val) for val in trial.values()))}.yaml", 'w') as ocp_app:
-            ocp_app.write(ryaml.dumps(client.ApiClient().sanitize_for_serialization(mypod)))
+        # print(trial)
+        yield {
+            **base_args, **trial
+        }
+        # mypod = create_pod(env)
+        # with open(f"ocp_apps/{'-'.join((str(val) for val in trial.values()))}.yaml", 'w') as ocp_app:
+            # ocp_app.write(ryaml.dumps(client.ApiClient().sanitize_for_serialization(mypod)))
 
 
 
