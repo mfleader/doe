@@ -140,7 +140,7 @@ def main(
             typer.echo(typer.style(f'Expected completion: {dt.datetime.now().astimezone() + remaining_expected_experiment_time}', fg=typer.colors.BLUE))
 
     trial_df = pd.DataFrame.from_records(trials)
-    trial_df.to_csv(f"dnsperf_trial_times-{dt.isoformat(dt.datetime.now().astimezone()).csv}",index=False)
+    trial_df.to_csv(f"dnsperf_trial_times-{dt.datetime.now().astimezone().isoformat(sep='T', timespec='seconds')}.csv",index=False)
 
 
 if __name__ == '__main__':
