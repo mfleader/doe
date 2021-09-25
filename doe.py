@@ -24,7 +24,7 @@ def randomize_powerset(factor_levels):
     power_set_levels = list(itertools.product(*factor_levels.values()))
     random.shuffle(power_set_levels)
     df0 = pd.DataFrame.from_records(power_set_levels, columns=factor_levels.keys())
-    df0['trial_id'] = df0.index + 1
+    df0['trial'] = df0.index + 1
     print(f"Total trials to run: {len(df0.index)}")
     for exp_levels in df0.to_dict('records'):
         yield exp_levels
@@ -38,13 +38,13 @@ def serialize_command_args(cmd_args: dict):
 
 def main(
     factor_levels_filepath,
-    block_id = 1,
+    block = 1,
 ):
     factor_levels_dict = toml.load(factor_levels_filepath)
     base_args, factor_levels = unchanged_levels(factor_levels_dict)
     base_args = {
         'run_id': str(uuid.uuid4()),
-        'block_id': block_id,
+        'block': block,
         **base_args
     }
 

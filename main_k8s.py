@@ -2,6 +2,8 @@ import time
 from pprint import pprint
 import asyncio
 from functools import partial
+import datetime as dt
+
 import typer
 from kubernetes import client, config, watch
 from kubernetes.dynamic import DynamicClient
@@ -9,6 +11,7 @@ from kubernetes.client.models.v1_job_status import V1JobStatus
 from kubernetes.client.api.batch_v1_api import BatchV1Api
 from kubernetes.client.models.v1_env_var import V1EnvVar
 import ryaml
+import pandas as pd
 
 import doe
 
@@ -80,19 +83,17 @@ def wait_on_job(trial, api_client, es, es_index, sleep_t):
     job = create_job_object(trial_args, es=es, es_index=es_index)
     api_dynamic = DynamicClient(api_client)
     job_resources = api_dynamic.resources.get(api_version='v1', kind='Job')
-
-    print(ryaml.dumps(api_client.sanitize_for_serialization(job)))
-    create_job(batch_v1, job)
     watcher = watch.Watch()
+
+    # print(ryaml.dumps(api_client.sanitize_for_serialization(job)))
+    create_job(batch_v1, job)
 
     # probably should be async
     for event in api_dynamic.watch(job_resources, namespace='dnsperf-test', watcher=watcher):
-        j = V1JobStatus(**{k8s_job_attribute_map[key]: val for key,val in event['raw_object']['status'].items() })
+        j = V1JobStatus(**{k8s_job_attribute_map[key]: val for key,val in event['raw_object']['status'].items()})
         print('------------------------------------------------------')
         pprint(f'job condition: {j.conditions}')
         if j.succeeded:
-            print('======================================================')
-            print('SUCCESS!')
             watcher.stop()
 
     # probably should be async
@@ -103,27 +104,43 @@ def wait_on_job(trial, api_client, es, es_index, sleep_t):
 @app.command()
 def main(
     experiment_factor_levels_path: str = typer.Argument(...),
-    es: str = typer.Option(...),
+    es: str = typer.Option(..., envvar='ELASTICSEARCH_URL'),
     es_index: str = typer.Option('snafu-dnsperf'),
     sdn_kubeconfig_path: str = typer.Option(...),
     ovn_kubeconfig_path: str = typer.Option(...),
-    sleep_t: int = typer.Option(2),
-    block_id: int = typer.Option(1)
+    sleep_t: int = typer.Option(120),
+    block_init_id: int = typer.Option(1),
+    replicates: int = typer.Option(1)
 ):
     sdn_cluster = config.new_client_from_config(sdn_kubeconfig_path)
     ovn_cluster = config.new_client_from_config(ovn_kubeconfig_path)
+    trial_times = []
+    completed_trials = 0
 
+    for i in range(block_init_id, block_init_id + replicates):
+        trials = [t for t in doe.main(factor_levels_filepath=experiment_factor_levels_path, block=i)]
+        total_trials = replicates * len(trials)
+        for trial in trials:
+            pprint(trial)
+            trial_start = dt.datetime.now()
 
-    for trial in doe.main(factor_levels_filepath=experiment_factor_levels_path, block_id=block_id):
-        # pprint(trial)
-        if trial['network_type'] == 'OpenShiftSDN':
-            wait_on_job_api = partial(wait_on_job, api_client=sdn_cluster)
-        elif trial['network_type'] == 'OVNKubernetes':
-            wait_on_job_api = partial(wait_on_job, api_client=ovn_cluster)
+            if trial['network_type'] == 'OpenShiftSDN':
+                wait_on_job_api = partial(wait_on_job, api_client=sdn_cluster)
+            elif trial['network_type'] == 'OVNKubernetes':
+                wait_on_job_api = partial(wait_on_job, api_client=ovn_cluster)
+            wait_on_job_api(trial, es=es, es_index=es_index, sleep_t=sleep_t)
 
-        wait_on_job_api(trial, es=es, es_index=es_index, sleep_t=sleep_t)
+            trial_end = dt.datetime.now()
+            completed_trials += 1
+            trial['time_len'] = trial_end - trial_start
+            trial_times.append(trial)
+            trial_time_mean = sum(map(lambda x: x['time_len'], trial_times), dt.timedelta()) / len(trial_times)
+            remaining_expected_experiment_time = (total_trials - completed_trials) * trial_time_mean
+            typer.echo(typer.style(f'Remaining expected experiment time: {remaining_expected_experiment_time}', fg=typer.colors.WHITE, bold=True))
+            typer.echo(typer.style(f'Expected completion: {dt.datetime.now().astimezone() + remaining_expected_experiment_time}', fg=typer.colors.BLUE))
 
-
+    trial_df = pd.DataFrame.from_records(trials)
+    trial_df.to_csv(f"dnsperf_trial_times-{dt.isoformat(dt.datetime.now().astimezone()).csv}",index=False)
 
 
 if __name__ == '__main__':
