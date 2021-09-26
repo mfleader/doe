@@ -12,6 +12,7 @@ ryaml = "*"
 pandas = "*"
 toml = "*"
 kubernetes-asyncio = "*"
+anyio = "*"
 
 [requires]
 python_version = "3.8"

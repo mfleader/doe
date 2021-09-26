@@ -4,6 +4,7 @@ import asyncio
 from functools import partial
 import datetime as dt
 
+import pytz
 import typer
 from kubernetes import client, config, watch
 from kubernetes.dynamic import DynamicClient
@@ -11,9 +12,11 @@ from kubernetes.client.models.v1_job_status import V1JobStatus
 from kubernetes.client.api.batch_v1_api import BatchV1Api
 from kubernetes.client.models.v1_env_var import V1EnvVar
 import ryaml
-import pandas as pd
+
+import anyio
 
 import doe
+import ocp
 
 
 app = typer.Typer()
@@ -21,6 +24,7 @@ JOB_NAME = "dnsperf-test-wrapper"
 k8s_job_attribute_map = {
     val: key for key, val in V1JobStatus.attribute_map.items()
 }
+
 
 def create_job_object(job_args, es, es_index):
     # Configureate Pod template container
@@ -101,47 +105,113 @@ def wait_on_job(trial, api_client, es, es_index, sleep_t):
     time.sleep(sleep_t)
 
 
+async def _experiment(
+    experiment_factor_levels_path: str,
+    es: str,
+    es_index: str,
+    sdn_kubeconfig_path: str,
+    ovn_kubeconfig_path: str,
+    sleep_t: int,
+    block: int,
+    replicate: int,
+    measure_repetitions: int
+):
+    k8s_sdn_api = config.new_client_from_config(sdn_kubeconfig_path)
+    k8s_ovn_api = config.new_client_from_config(ovn_kubeconfig_path)
+    ocp_sdn_api = await ocp.OCP(sdn_kubeconfig_path, 'OpenShiftSDN')
+    ocp_ovn_api = await ocp.OCP(ovn_kubeconfig_path, 'OVNKubernetes')
+    trial_times = []
+    completed_trials = 0
+    eastern = pytz.timezone('US/Eastern')
+
+    trials = [t for t in doe.main(factor_levels_filepath=experiment_factor_levels_path, block=block)]
+    total_trials = len(trials)
+    for input_args in trials:
+        input_args['trial']['repetitions'] = measure_repetitions
+        input_args['trial']['replicate'] = replicate
+        pprint(input_args['trial'])
+        trial_start = dt.datetime.now()
+
+        if input_args['trial']['network_type'] == 'OpenShiftSDN':
+            wait_on_job_api = partial(wait_on_job, api_client=k8s_sdn_api)
+            async with anyio.create_task_group() as tg:
+                tg.start_soon(ocp_sdn_api.scale_machinesets, input_args['trial']['data_plane_node_quantity'])
+        elif input_args['trial']['network_type'] == 'OVNKubernetes':
+            wait_on_job_api = partial(wait_on_job, api_client=k8s_ovn_api)
+            async with anyio.create_task_group() as tg:
+                tg.start_soon(ocp_ovn_api.scale_machinesets, input_args['trial']['data_plane_node_quantity'])
+
+        wait_on_job_api({**input_args['common'], **input_args['trial']}, es=es, es_index=es_index, sleep_t=sleep_t)
+
+        trial_end = dt.datetime.now()
+        completed_trials += 1
+        trial_times.append((trial_end - trial_start))
+        trial_time_mean = sum((trial_times), dt.timedelta()) / len(trial_times)
+        remaining_expected_experiment_time = (total_trials - completed_trials) * trial_time_mean
+        typer.echo(typer.style(f'Remaining expected experiment time: {remaining_expected_experiment_time}', fg=typer.colors.WHITE, bold=True))
+        typer.echo(typer.style(f'Expected completion: {eastern.localize(dt.datetime.now() + remaining_expected_experiment_time, is_dst=True)}', fg=typer.colors.BLUE))
+
+
 @app.command()
-def main(
+async def main(
     experiment_factor_levels_path: str = typer.Argument(...),
     es: str = typer.Option(..., envvar='ELASTICSEARCH_URL'),
     es_index: str = typer.Option('snafu-dnsperf'),
     sdn_kubeconfig_path: str = typer.Option(...),
     ovn_kubeconfig_path: str = typer.Option(...),
     sleep_t: int = typer.Option(120),
-    block_init_id: int = typer.Option(1),
-    replicates: int = typer.Option(1)
+    block: int = typer.Option(1),
+    replicate: int = typer.Option(1, help="Experiment run index"),
+    measure_repetitions = typer.Option(1)
 ):
-    sdn_cluster = config.new_client_from_config(sdn_kubeconfig_path)
-    ovn_cluster = config.new_client_from_config(ovn_kubeconfig_path)
-    trial_times = []
-    completed_trials = 0
+    anyio.run(
+        _experiment,
+        experiment_factor_levels_path,
+        es,
+        es_index,
+        sdn_kubeconfig_path,
+        ovn_kubeconfig_path,
+        sleep_t,
+        block,
+        replicate,
+        measure_repetitions
+    )
+    # k8s_sdn_api = config.new_client_from_config(sdn_kubeconfig_path)
+    # k8s_ovn_api = config.new_client_from_config(ovn_kubeconfig_path)
+    # ocp_sdn_api = await ocp.OCP(sdn_kubeconfig_path, 'OpenShiftSDN')
+    # ocp_ovn_api = await ocp.OCP(ovn_kubeconfig_path, 'OVNKubernetes')
+    # trial_times = []
+    # completed_trials = 0
+    # eastern = pytz.timezone('US/Eastern')
 
-    for i in range(block_init_id, block_init_id + replicates):
-        trials = [t for t in doe.main(factor_levels_filepath=experiment_factor_levels_path, block=i)]
-        total_trials = replicates * len(trials)
-        for trial in trials:
-            pprint(trial)
-            trial_start = dt.datetime.now()
+    # trials = [t for t in doe.main(factor_levels_filepath=experiment_factor_levels_path, block=block)]
+    # total_trials = len(trials)
+    # for input_args in trials:
+    #     input_args['trial']['repetitions'] = len(trials)
+    #     input_args['trial']['replicate'] = replicate
+    #     pprint(input_args['trial'])
+    #     trial_start = dt.datetime.now()
 
-            if trial['network_type'] == 'OpenShiftSDN':
-                wait_on_job_api = partial(wait_on_job, api_client=sdn_cluster)
-            elif trial['network_type'] == 'OVNKubernetes':
-                wait_on_job_api = partial(wait_on_job, api_client=ovn_cluster)
-            wait_on_job_api(trial, es=es, es_index=es_index, sleep_t=sleep_t)
+    #     if input_args['trial']['network_type'] == 'OpenShiftSDN':
+    #         wait_on_job_api = partial(wait_on_job, api_client=k8s_sdn_api)
+    #         async with anyio.create_task_group() as tg:
+    #             tg.start_soon(ocp_sdn_api.scale_machinesets, input_args['trial']['data_plane_node_quantity'])
+    #     elif input_args['trial']['network_type'] == 'OVNKubernetes':
+    #         wait_on_job_api = partial(wait_on_job, api_client=k8s_ovn_api)
+    #         async with anyio.create_task_group() as tg:
+    #             tg.start_soon(ocp_ovn_api.scale_machinesets, input_args['trial']['data_plane_node_quantity'])
 
-            trial_end = dt.datetime.now()
-            completed_trials += 1
-            trial['time_len'] = trial_end - trial_start
-            trial_times.append(trial)
-            trial_time_mean = sum(map(lambda x: x['time_len'], trial_times), dt.timedelta()) / len(trial_times)
-            remaining_expected_experiment_time = (total_trials - completed_trials) * trial_time_mean
-            typer.echo(typer.style(f'Remaining expected experiment time: {remaining_expected_experiment_time}', fg=typer.colors.WHITE, bold=True))
-            typer.echo(typer.style(f'Expected completion: {dt.datetime.now().astimezone() + remaining_expected_experiment_time}', fg=typer.colors.BLUE))
+    #     wait_on_job_api({**input_args['common'], **input_args['trial']}, es=es, es_index=es_index, sleep_t=sleep_t)
 
-    trial_df = pd.DataFrame.from_records(trials)
-    trial_df.to_csv(f"dnsperf_trial_times-{dt.datetime.now().astimezone().isoformat(sep='T', timespec='seconds')}.csv",index=False)
+    #     trial_end = dt.datetime.now()
+    #     completed_trials += 1
+    #     trial_times.append((trial_end - trial_start))
+    #     trial_time_mean = sum((trial_times), dt.timedelta()) / len(trial_times)
+    #     remaining_expected_experiment_time = (total_trials - completed_trials) * trial_time_mean
+    #     typer.echo(typer.style(f'Remaining expected experiment time: {remaining_expected_experiment_time}', fg=typer.colors.WHITE, bold=True))
+    #     typer.echo(typer.style(f'Expected completion: {eastern.localize(dt.datetime.now() + remaining_expected_experiment_time, is_dst=True)}', fg=typer.colors.BLUE))
 
+# python main_k8s.py exp_simple.toml --sdn-kubeconfig-path /root/scale-ci-matt-dns-sdn-aws/auth/kubeconfig --ovn-kubeconfig-path /root/scale-ci-matt-dns-aws/auth/kubeconfig --block 2 --es-index dnsperf-multi-reps
 
 if __name__ == '__main__':
     app()
