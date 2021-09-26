@@ -20,19 +20,28 @@ class OCP:
         self.kubeconfig = kubeconfig_path
         self.network_type = network_type
         self.workers = filter(lambda w: 'worker' in w.name, self.list_machinesets())
+        self.env = os.environ.copy()
+        self.env['KUBECONFIG'] = kubeconfig_path
 
     async def list_machinesets(self) -> list[Machineset]:
-        machinesets_table_output = await anyio.run_process([
-            'oc', 'get', 'machinesets', '-n', 'openshift-machine-api'
-        ])
+        os.environ['KUBECONFIG'] = self.kubeconfig
+        machinesets_table_output = await anyio.run_process(
+            command = [
+                'oc', 'get', 'machinesets', '-n', 'openshift-machine-api'
+            ],
+            env = self.env
+        )
         return parse_machineset_table(machinesets_table_output)
 
     async def scale_workers(self, node_quantity: int):
-        for worker in self.workers:
-            result = await anyio.run_process([
-                'oc', 'scale', f'--replicas={node_quantity}', 'machineset', worker.name,
-                '-n', 'openshift-machine-api'
-            ])
+        async for worker in self.workers:
+            result = await anyio.run_process(
+                command = [
+                    'oc', 'scale', f'--replicas={node_quantity}', 'machineset', worker.name,
+                    '-n', 'openshift-machine-api'
+                ],
+                env = self.env
+            )
             print(result.stdout.decode())
 
 
