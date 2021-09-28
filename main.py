@@ -16,7 +16,7 @@ import ryaml
 import anyio
 
 import doe
-import ocp
+
 
 
 app = typer.Typer()
@@ -118,8 +118,6 @@ async def _experiment(
 ):
     k8s_sdn_api = config.new_client_from_config(sdn_kubeconfig_path)
     k8s_ovn_api = config.new_client_from_config(ovn_kubeconfig_path)
-    ocp_sdn_api = await ocp.OCP(sdn_kubeconfig_path, 'OpenShiftSDN')
-    ocp_ovn_api = await ocp.OCP(ovn_kubeconfig_path, 'OVNKubernetes')
     trial_times = []
     completed_trials = 0
     eastern = pytz.timezone('US/Eastern')
@@ -134,12 +132,8 @@ async def _experiment(
 
         if input_args['trial']['network_type'] == 'OpenShiftSDN':
             wait_on_job_api = partial(wait_on_job, api_client=k8s_sdn_api)
-            async with anyio.create_task_group() as tg:
-                tg.start_soon(ocp_sdn_api.scale_machinesets, input_args['trial']['data_plane_node_quantity'])
         elif input_args['trial']['network_type'] == 'OVNKubernetes':
             wait_on_job_api = partial(wait_on_job, api_client=k8s_ovn_api)
-            async with anyio.create_task_group() as tg:
-                tg.start_soon(ocp_ovn_api.scale_machinesets, input_args['trial']['data_plane_node_quantity'])
 
         wait_on_job_api({**input_args['common'], **input_args['trial']}, es=es, es_index=es_index, sleep_t=sleep_t)
 
@@ -149,11 +143,11 @@ async def _experiment(
         trial_time_mean = sum((trial_times), dt.timedelta()) / len(trial_times)
         remaining_expected_experiment_time = (total_trials - completed_trials) * trial_time_mean
         typer.echo(typer.style(f'Remaining expected experiment time: {remaining_expected_experiment_time}', fg=typer.colors.WHITE, bold=True))
-        typer.echo(typer.style(f'Expected completion: {eastern.localize(dt.datetime.now() + remaining_expected_experiment_time, is_dst=True)}', fg=typer.colors.BLUE))
+        typer.echo(typer.style(f'Expected completion: {dt.datetime.now() + remaining_expected_experiment_time}', fg=typer.colors.BLUE))
 
 
 @app.command()
-async def main(
+def main(
     experiment_factor_levels_path: str = typer.Argument(...),
     es: str = typer.Option(..., envvar='ELASTICSEARCH_URL'),
     es_index: str = typer.Option('snafu-dnsperf'),
@@ -176,42 +170,7 @@ async def main(
         replicate,
         measure_repetitions
     )
-    # k8s_sdn_api = config.new_client_from_config(sdn_kubeconfig_path)
-    # k8s_ovn_api = config.new_client_from_config(ovn_kubeconfig_path)
-    # ocp_sdn_api = await ocp.OCP(sdn_kubeconfig_path, 'OpenShiftSDN')
-    # ocp_ovn_api = await ocp.OCP(ovn_kubeconfig_path, 'OVNKubernetes')
-    # trial_times = []
-    # completed_trials = 0
-    # eastern = pytz.timezone('US/Eastern')
 
-    # trials = [t for t in doe.main(factor_levels_filepath=experiment_factor_levels_path, block=block)]
-    # total_trials = len(trials)
-    # for input_args in trials:
-    #     input_args['trial']['repetitions'] = len(trials)
-    #     input_args['trial']['replicate'] = replicate
-    #     pprint(input_args['trial'])
-    #     trial_start = dt.datetime.now()
-
-    #     if input_args['trial']['network_type'] == 'OpenShiftSDN':
-    #         wait_on_job_api = partial(wait_on_job, api_client=k8s_sdn_api)
-    #         async with anyio.create_task_group() as tg:
-    #             tg.start_soon(ocp_sdn_api.scale_machinesets, input_args['trial']['data_plane_node_quantity'])
-    #     elif input_args['trial']['network_type'] == 'OVNKubernetes':
-    #         wait_on_job_api = partial(wait_on_job, api_client=k8s_ovn_api)
-    #         async with anyio.create_task_group() as tg:
-    #             tg.start_soon(ocp_ovn_api.scale_machinesets, input_args['trial']['data_plane_node_quantity'])
-
-    #     wait_on_job_api({**input_args['common'], **input_args['trial']}, es=es, es_index=es_index, sleep_t=sleep_t)
-
-    #     trial_end = dt.datetime.now()
-    #     completed_trials += 1
-    #     trial_times.append((trial_end - trial_start))
-    #     trial_time_mean = sum((trial_times), dt.timedelta()) / len(trial_times)
-    #     remaining_expected_experiment_time = (total_trials - completed_trials) * trial_time_mean
-    #     typer.echo(typer.style(f'Remaining expected experiment time: {remaining_expected_experiment_time}', fg=typer.colors.WHITE, bold=True))
-    #     typer.echo(typer.style(f'Expected completion: {eastern.localize(dt.datetime.now() + remaining_expected_experiment_time, is_dst=True)}', fg=typer.colors.BLUE))
-
-# python main.py exp_simple.toml --sdn-kubeconfig-path /root/scale-ci-matt-dns-sdn-aws/auth/kubeconfig --ovn-kubeconfig-path /root/scale-ci-matt-dns-aws/auth/kubeconfig --block 2 --es-index dnsperf-multi-reps
 
 if __name__ == '__main__':
     app()
