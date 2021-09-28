@@ -4,6 +4,7 @@ import os
 
 import anyio
 
+import time
 
 @dataclass
 class Machineset:
@@ -19,11 +20,13 @@ class OCP:
     def __init__(self, kubeconfig_path, network_type):
         self.kubeconfig = kubeconfig_path
         self.network_type = network_type
-        self.workers = filter(lambda w: 'worker' in w.name, self.list_machinesets())
+        # self.workers = filter(lambda w: 'worker' in w.name, self.list_machinesets())
         self.env = os.environ.copy()
         self.env['KUBECONFIG'] = kubeconfig_path
+        self.allowed_workers = {'worker-us-west-2a', 'worker-us-west-2b', 'worker-us-west-2c'}
+        self.workers = None
 
-    async def list_machinesets(self) -> list[Machineset]:
+    async def list_machinesets(self):
         os.environ['KUBECONFIG'] = self.kubeconfig
         machinesets_table_output = await anyio.run_process(
             command = [
@@ -31,18 +34,42 @@ class OCP:
             ],
             env = self.env
         )
-        return parse_machineset_table(machinesets_table_output)
+        return parse_machineset_table(machinesets_table_output.stdout.decode())
+
+    async def get_workers(self):
+        machinesets = await self.list_machinesets()
+        workers = list()
+        for machineset in machinesets:
+            if any((name in machineset.name for name in self.allowed_workers)):
+                workers.append(machineset)
+        return workers
 
     async def scale_workers(self, node_quantity: int):
-        async for worker in self.workers:
+
+        workers = await self.get_workers()
+        nodes = int(node_quantity / len(self.allowed_workers))
+
+        for worker in workers:
             result = await anyio.run_process(
                 command = [
-                    'oc', 'scale', f'--replicas={node_quantity}', 'machineset', worker.name,
+                    'oc', 'scale', f'--replicas={nodes}', 'machineset', worker.name,
                     '-n', 'openshift-machine-api'
                 ],
                 env = self.env
             )
             print(result.stdout.decode())
+
+        workers = await self.get_workers()
+        while any((worker.current != worker.desired for worker in workers)):
+            workers = await self.get_workers()
+
+        res = await anyio.run_process(
+            command = [
+                'oc', 'get', 'machinesets', '-n', 'openshift-machine-api'
+            ],
+            env = self.env)
+        print(res.stdout.decode())
+        time.sleep(5)
 
 
 def parse_machineset_table(machinesets: str):

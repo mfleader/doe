@@ -1,1 +1,0 @@
-{"load_limit": ["inf"], "control_plane_nodes": 3, "network_type": ["OpenShiftSDN", "OVNKubernetes"], "transport_mode": ["udp", "tcp"], "client_threads": [1]}
