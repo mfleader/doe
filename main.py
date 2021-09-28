@@ -120,30 +120,52 @@ async def _experiment(
     k8s_ovn_api = config.new_client_from_config(ovn_kubeconfig_path)
     trial_times = []
     completed_trials = 0
-    eastern = pytz.timezone('US/Eastern')
 
-    trials = [t for t in doe.main(factor_levels_filepath=experiment_factor_levels_path, block=block)]
-    total_trials = len(trials)
-    for input_args in trials:
-        input_args['trial']['repetitions'] = measure_repetitions
-        input_args['trial']['replicate'] = replicate
-        pprint(input_args['trial'])
-        trial_start = dt.datetime.now()
+    sdn_dynamic = DynamicClient(k8s_sdn_api)
+    svc_resources = sdn_dynamic.resources.get(api_version='v1', kind='Service')
 
-        if input_args['trial']['network_type'] == 'OpenShiftSDN':
-            wait_on_job_api = partial(wait_on_job, api_client=k8s_sdn_api)
-        elif input_args['trial']['network_type'] == 'OVNKubernetes':
-            wait_on_job_api = partial(wait_on_job, api_client=k8s_ovn_api)
+    for key in svc_resources.get().items:
+        print(key.metadata.name)
 
-        wait_on_job_api({**input_args['common'], **input_args['trial']}, es=es, es_index=es_index, sleep_t=sleep_t)
+    sdn_queries = '\n'.join(
+        (f"{item.metadata.name}.{item.metadata.namespace}.svc.cluster.local A" for item in svc_resources.get().items)
+    )
 
-        trial_end = dt.datetime.now()
-        completed_trials += 1
-        trial_times.append((trial_end - trial_start))
-        trial_time_mean = sum((trial_times), dt.timedelta()) / len(trial_times)
-        remaining_expected_experiment_time = (total_trials - completed_trials) * trial_time_mean
-        typer.echo(typer.style(f'Remaining expected experiment time: {remaining_expected_experiment_time}', fg=typer.colors.WHITE, bold=True))
-        typer.echo(typer.style(f'Expected completion: {dt.datetime.now() + remaining_expected_experiment_time}', fg=typer.colors.BLUE))
+    print(sdn_queries)
+
+    # trials = [t for t in doe.main(factor_levels_filepath=experiment_factor_levels_path, block=block)]
+    # total_trials = len(trials)
+    # for input_args in trials:
+    #     input_args['trial']['repetitions'] = measure_repetitions
+    #     input_args['trial']['replicate'] = replicate
+    #     pprint(input_args['trial'])
+    #     trial_start = dt.datetime.now()
+
+    #     if input_args['trial']['network_type'] == 'OpenShiftSDN':
+    #         wait_on_job_api = partial(wait_on_job, api_client=k8s_sdn_api)
+    #     elif input_args['trial']['network_type'] == 'OVNKubernetes':
+    #         wait_on_job_api = partial(wait_on_job, api_client=k8s_ovn_api)
+
+    #     wait_on_job_api({**input_args['common'], **input_args['trial']}, es=es, es_index=es_index, sleep_t=sleep_t)
+
+    #     trial_end = dt.datetime.now()
+    #     completed_trials += 1
+    #     trial_times.append((trial_end - trial_start))
+    #     trial_time_mean = sum((trial_times), dt.timedelta()) / len(trial_times)
+    #     remaining_expected_experiment_time = (total_trials - completed_trials) * trial_time_mean
+    #     typer.echo(typer.style(f'Remaining expected experiment time: {remaining_expected_experiment_time}', fg=typer.colors.WHITE, bold=True))
+    #     typer.echo(typer.style(f'Expected completion: {dt.datetime.now() + remaining_expected_experiment_time}', fg=typer.colors.BLUE))
+
+
+# def cluster_services(kubeconfig_path):
+#     env = os.environ.copy()
+#     env['KUBECONFIG_PATH'] = kubeconfig_path
+#     res = anyio.run_process([
+#         'oc', 'get', 'svc', '-A', '-o', 'template', '--template',
+#         "'\{\{range.items\}\}\{\{.metadata.name\"
+#     ],
+#     env=env)
+#     print(res.stdout.decode())
 
 
 @app.command()
