@@ -11,7 +11,7 @@ from kubernetes.dynamic import DynamicClient
 from kubernetes.client.models.v1_job_status import V1JobStatus
 from kubernetes.client.api.batch_v1_api import BatchV1Api
 from kubernetes.client.models.v1_env_var import V1EnvVar
-
+from kubernetes.client.models.v1_volume_mount import V1VolumeMount
 import ryaml
 
 import anyio
@@ -21,13 +21,13 @@ import doe
 
 
 app = typer.Typer()
-JOB_NAME = "dnsperf-test-wrapper"
+JOB_NAME = "dnsperf-test"
 k8s_job_attribute_map = {
     val: key for key, val in V1JobStatus.attribute_map.items()
 }
 
 
-def create_job_object(job_args, es, es_index):
+def create_job_object(job_args, es, es_index, cluster_queries):
     # Configureate Pod template container
     container = client.V1Container(
         name='container',
@@ -35,12 +35,24 @@ def create_job_object(job_args, es, es_index):
         image_pull_policy = 'Always',
         command=["/bin/sh", "-c"],
         args=[' '.join(("python", "snafu/run_snafu.py", "-v", "--tool", "dnsperf", *job_args))],
-        env=[V1EnvVar(name='es', value=es), V1EnvVar(name='es_index', value=es_index)]
-        )
+        env=[V1EnvVar(name='es', value=es), V1EnvVar(name='es_index', value=es_index)],
+        volume_mounts=[V1VolumeMount(name='config', mount_path='/opt/dns', read_only=True)]
+    )
     # Create and configurate a spec section
     template = client.V1PodTemplateSpec(
-        metadata=client.V1ObjectMeta(labels={"app": JOB_NAME}),
-        spec=client.V1PodSpec(restart_policy="Never", containers=[container]))
+        # metadata=client.V1ObjectMeta(labels={"app": JOB_NAME}),
+        spec=client.V1PodSpec(
+            restart_policy="Never", containers=[container],
+            volumes = [
+                client.V1Volume(
+                    name = 'config',
+                    config_map = {
+                        'name': 'dnsperf',
+                    }
+                )
+            ]
+            )
+        )
     # Create the specification of deployment
     spec = client.V1JobSpec(
         template=template,
@@ -82,31 +94,69 @@ def delete_job(api_instance):
     print("Job deleted. status='%s'" % str(api_response.status))
 
 
-def wait_on_job(trial, api_client, es, es_index, sleep_t):
+def wait_on_job(trial, api_client, es, es_index, sleep_t, cluster_queries):
     trial_args = doe.serialize_command_args(trial)
     batch_v1 = BatchV1Api(api_client=api_client)
-    job = create_job_object(trial_args, es=es, es_index=es_index)
+    job = create_job_object(trial_args, es=es, es_index=es_index, cluster_queries=cluster_queries)
     api_dynamic = DynamicClient(api_client)
     job_resources = api_dynamic.resources.get(api_version='v1', kind='Job')
     watcher = watch.Watch()
 
-    # print(ryaml.dumps(api_client.sanitize_for_serialization(job)))
+    print(ryaml.dumps(api_client.sanitize_for_serialization(job)))
     create_job(batch_v1, job)
 
     # probably should be async
-    for event in api_dynamic.watch(job_resources, namespace='dnsperf-test', watcher=watcher):
-        j = V1JobStatus(**{k8s_job_attribute_map[key]: val for key,val in event['raw_object']['status'].items()})
-        print('------------------------------------------------------')
-        pprint(f'job condition: {j.conditions}')
-        if j.succeeded:
-            watcher.stop()
-
-    # probably should be async
-    delete_job(batch_v1)
+    try:
+        for event in api_dynamic.watch(job_resources, namespace='dnsperf-test', watcher=watcher):
+            j = V1JobStatus(**{k8s_job_attribute_map[key]: val for key,val in event['raw_object']['status'].items()})
+            print('------------------------------------------------------')
+            pprint(f'job condition: {j.conditions}')
+            if j.succeeded:
+                watcher.stop()
+    finally:
+        # probably should be async
+        delete_job(batch_v1)
     time.sleep(sleep_t)
 
 
-async def watch_job(api_client):
+def cluster_queries(api_client):
+    dynamic_client = DynamicClient(api_client)
+    svc_resources = dynamic_client.resources.get(api_version='v1', kind='Service')
+    return '\n'.join(
+        (f"{item.metadata.name}.{item.metadata.namespace}.svc.cluster.local A" for item in svc_resources.get().items)
+    )
+
+
+def create_configmap_obj(cluster_queries):
+    return client.V1ConfigMap(
+        api_version = 'v1',
+        kind = "ConfigMap",
+        metadata = {
+            "name": "dnsperf"
+        },
+        data = {
+            "queries.txt": cluster_queries
+            # "queries.txt": "kubernetes.default.svc.cluster.local A"
+        },
+        # immutable = True
+    )
+
+
+def create_configmap(api_client, configmap):
+    dynamic_client = DynamicClient(api_client)
+    configmap_api = dynamic_client.resources.get(api_version='v1', kind='ConfigMap')
+    res = configmap_api.create(body=configmap, namespace='dnsperf-test')
+    print(f'Configmap created {res.status}')
+
+
+def delete_configmap(api_client):
+    dynamic_client = DynamicClient(api_client)
+    configmap_api = dynamic_client.resources.get(api_version='v1', kind='ConfigMap')
+    res = configmap_api.delete(
+        name='dnsperf',
+        namespace='dnsperf-test'
+    )
+    print(f"Configmap {res.status}")
 
 
 
@@ -123,9 +173,26 @@ async def _experiment(
 ):
     k8s_sdn_api = config.new_client_from_config(sdn_kubeconfig_path)
     k8s_ovn_api = config.new_client_from_config(ovn_kubeconfig_path)
+
+    # try:
+    sdn_queries = cluster_queries(k8s_sdn_api)
+    ovn_queries = cluster_queries(k8s_ovn_api)
+    sdn_cm = create_configmap_obj(sdn_queries)
+    ovn_cm = create_configmap_obj(ovn_queries)
+
+    # cleanup old job and config
+    # delete_configmap(k8s_sdn_api)
+    # delete_configmap(k8s_ovn_api)
+    # k8s_sdn_job_api = BatchV1Api(api_client=k8s_sdn_api)
+    # delete_job(k8s_sdn_job_api)
+    # k8s_ovn_job_api = BatchV1Api(api_client=k8s_ovn_api)
+    # delete_job(k8s_ovn_job_api)
+
+    create_configmap(k8s_sdn_api, sdn_cm)
+    create_configmap(k8s_ovn_api, ovn_cm)
+
     trial_times = []
     completed_trials = 0
-    eastern = pytz.timezone('US/Eastern')
 
     trials = [t for t in doe.main(factor_levels_filepath=experiment_factor_levels_path, block=block)]
     total_trials = len(trials)
@@ -136,9 +203,9 @@ async def _experiment(
         trial_start = dt.datetime.now()
 
         if input_args['trial']['network_type'] == 'OpenShiftSDN':
-            wait_on_job_api = partial(wait_on_job, api_client=k8s_sdn_api)
+            wait_on_job_api = partial(wait_on_job, api_client=k8s_sdn_api, cluster_queries=sdn_queries)
         elif input_args['trial']['network_type'] == 'OVNKubernetes':
-            wait_on_job_api = partial(wait_on_job, api_client=k8s_ovn_api)
+            wait_on_job_api = partial(wait_on_job, api_client=k8s_ovn_api, cluster_queries=ovn_queries)
 
         wait_on_job_api({**input_args['common'], **input_args['trial']}, es=es, es_index=es_index, sleep_t=sleep_t)
 
@@ -149,6 +216,9 @@ async def _experiment(
         remaining_expected_experiment_time = (total_trials - completed_trials) * trial_time_mean
         typer.echo(typer.style(f'Remaining expected experiment time: {remaining_expected_experiment_time}', fg=typer.colors.WHITE, bold=True))
         typer.echo(typer.style(f'Expected completion: {dt.datetime.now() + remaining_expected_experiment_time}', fg=typer.colors.BLUE))
+    # except:
+    delete_configmap(k8s_sdn_api)
+    delete_configmap(k8s_ovn_api)
 
 
 @app.command()
