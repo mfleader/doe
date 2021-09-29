@@ -48,14 +48,6 @@ def create_job_object(job_args, es, es_index, cluster_queries):
                     name = 'config',
                     config_map = {
                         'name': 'dnsperf',
-                        # 'kind': 'ConfigMap',
-                        # 'metadata': {
-                        #     'name': 'dnsperf'
-                        # },
-                        # 'data': {
-                        #     # 'queries.txt': cluster_queries
-                        #     'queries.txt': 'kubernetes.default.svc.cluster.local A'
-                        # }
                     }
                 )
             ]
