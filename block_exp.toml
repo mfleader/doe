@@ -1,0 +1,16 @@
+[block]
+dns_software_name = "coredns"
+dns_software_version = "1.8.1"
+openshift_cluster_version = "4.8.0-0.nightly-2021-06-19-005119"
+kubernetes_cluster_version = "v1.21.0-rc.0+120883f"
+data_plane_node_quantity = [3,6]
+distributed_computing_platform = "aws"
+network_type = ["OpenShiftSDN", "OVNKubernetes"]
+
+[trial]
+load_limit = ["inf"]
+query_path = ["/opt/snafu/queries.txt"]
+transport_mode = ["udp", "tcp"]
+client_threads = [1]
+runtime_length = 90
+timeout_length = 90
