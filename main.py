@@ -76,7 +76,7 @@ def create_job(api_instance, job):
 
 def update_job(api_instance, job):
     # Update container image
-    job.spec.template.spec.containers[0].image = "perl"
+    job.spec.template.spec.containers[0].image = 'quay.io/mleader/dnsdebug:latest'
     api_response = api_instance.patch_namespaced_job(
         name=JOB_NAME,
         namespace="dnsperf-test",
