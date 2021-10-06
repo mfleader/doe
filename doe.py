@@ -50,7 +50,7 @@ def main(
 
     for trial in randomize_powerset(factor_levels):
         yield {
-            'common': base_args, 'trial': trial
+             **base_args, **trial
         }
 
 

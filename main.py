@@ -159,26 +159,25 @@ def delete_configmap(api_client):
     print(f"Configmap {res.status}")
 
 
-
 async def _experiment(
     experiment_factor_levels_path: str,
     es: str,
     es_index: str,
     sdn_kubeconfig_path: str,
-    ovn_kubeconfig_path: str,
+    # ovn_kubeconfig_path: str,
     sleep_t: int,
     block: int,
     replicate: int,
     measure_repetitions: int
 ):
     k8s_sdn_api = config.new_client_from_config(sdn_kubeconfig_path)
-    k8s_ovn_api = config.new_client_from_config(ovn_kubeconfig_path)
+    # k8s_ovn_api = config.new_client_from_config(ovn_kubeconfig_path)
 
     # try:
     sdn_queries = cluster_queries(k8s_sdn_api)
-    ovn_queries = cluster_queries(k8s_ovn_api)
+    # ovn_queries = cluster_queries(k8s_ovn_api)
     sdn_cm = create_configmap_obj(sdn_queries)
-    ovn_cm = create_configmap_obj(ovn_queries)
+    # ovn_cm = create_configmap_obj(ovn_queries)
 
     # cleanup old job and config
     # delete_configmap(k8s_sdn_api)
@@ -189,36 +188,36 @@ async def _experiment(
     # delete_job(k8s_ovn_job_api)
 
     create_configmap(k8s_sdn_api, sdn_cm)
-    create_configmap(k8s_ovn_api, ovn_cm)
+    # create_configmap(k8s_ovn_api, ovn_cm)
 
     trial_times = []
     completed_trials = 0
 
     trials = [t for t in doe.main(factor_levels_filepath=experiment_factor_levels_path, block=block)]
     total_trials = len(trials)
-    for input_args in trials:
-        input_args['trial']['repetitions'] = measure_repetitions
-        input_args['trial']['replicate'] = replicate
-        pprint(input_args['trial'])
-        trial_start = dt.datetime.now()
+    # for input_args in trials:
+    #     input_args['repetitions'] = measure_repetitions
+    #     input_args['replicate'] = replicate
+    #     pprint(input_args)
+    #     trial_start = dt.datetime.now()
 
-        if input_args['trial']['network_type'] == 'OpenShiftSDN':
-            wait_on_job_api = partial(wait_on_job, api_client=k8s_sdn_api, cluster_queries=sdn_queries)
-        elif input_args['trial']['network_type'] == 'OVNKubernetes':
-            wait_on_job_api = partial(wait_on_job, api_client=k8s_ovn_api, cluster_queries=ovn_queries)
+    #     # if input_args['trial']['network_type'] == 'OpenShiftSDN':
+    #     wait_on_job_api = partial(wait_on_job, api_client=k8s_sdn_api, cluster_queries=sdn_queries)
+    #     # elif input_args['trial']['network_type'] == 'OVNKubernetes':
+    #         # wait_on_job_api = partial(wait_on_job, api_client=k8s_ovn_api, cluster_queries=ovn_queries)
 
-        wait_on_job_api({**input_args['common'], **input_args['trial']}, es=es, es_index=es_index, sleep_t=sleep_t)
+    #     wait_on_job_api(input_args, es=es, es_index=es_index, sleep_t=sleep_t)
 
-        trial_end = dt.datetime.now()
-        completed_trials += 1
-        trial_times.append((trial_end - trial_start))
-        trial_time_mean = sum((trial_times), dt.timedelta()) / len(trial_times)
-        remaining_expected_experiment_time = (total_trials - completed_trials) * trial_time_mean
-        typer.echo(typer.style(f'Remaining expected experiment time: {remaining_expected_experiment_time}', fg=typer.colors.WHITE, bold=True))
-        typer.echo(typer.style(f'Expected completion: {dt.datetime.now() + remaining_expected_experiment_time}', fg=typer.colors.BLUE))
-    # except:
-    delete_configmap(k8s_sdn_api)
-    delete_configmap(k8s_ovn_api)
+    #     trial_end = dt.datetime.now()
+    #     completed_trials += 1
+    #     trial_times.append((trial_end - trial_start))
+    #     trial_time_mean = sum((trial_times), dt.timedelta()) / len(trial_times)
+    #     remaining_expected_experiment_time = (total_trials - completed_trials) * trial_time_mean
+    #     typer.echo(typer.style(f'Remaining expected experiment time: {remaining_expected_experiment_time}', fg=typer.colors.WHITE, bold=True))
+    #     typer.echo(typer.style(f'Expected completion: {dt.datetime.now() + remaining_expected_experiment_time}', fg=typer.colors.BLUE))
+
+    # delete_configmap(k8s_sdn_api)
+    # delete_configmap(k8s_ovn_api)
 
 
 @app.command()
@@ -227,8 +226,8 @@ def main(
     es: str = typer.Option(..., envvar='ELASTICSEARCH_URL'),
     es_index: str = typer.Option('snafu-dnsperf'),
     sdn_kubeconfig_path: str = typer.Option(...),
-    ovn_kubeconfig_path: str = typer.Option(...),
-    sleep_t: int = typer.Option(120),
+    # ovn_kubeconfig_path: str = typer.Option(...),
+    sleep_t: int = typer.Option(10),
     block: int = typer.Option(1),
     replicate: int = typer.Option(1, help="Experiment run index"),
     measure_repetitions = typer.Option(1)
@@ -239,7 +238,7 @@ def main(
         es,
         es_index,
         sdn_kubeconfig_path,
-        ovn_kubeconfig_path,
+        # ovn_kubeconfig_path,
         sleep_t,
         block,
         replicate,

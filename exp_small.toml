@@ -1,0 +1,10 @@
+control_plane_node_quantity = 3
+data_plane_node_quantity = 3
+load_limit = ["inf"]
+query_path = ["/opt/dns/queries.txt"]
+network_type = ["OpenShiftSDN"]
+transport_mode = ["tcp", "udp"]
+client_threads = [5]
+distributed_computing_platform = "aws"
+runtime_length = 90
+timeout_length = 90
